@@ -22,10 +22,6 @@ const sqlConfig = {
   database: process.env.SQL_DATABASE,
   user: process.env.SQL_USER,
   password: process.env.SQL_PASSWORD,
-  /*server: "capiserver.database.windows.net",  // tu servidor Azure SQL
-  database: "GuarderiaDB",                     // tu base de datos
-  user: "admincapi@capiserver",                // usuario con @servername
-  password: "Vanesa47",                        // tu contraseña*/
   port: 1433,
   options: {
     encrypt: true,
