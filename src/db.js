@@ -56,6 +56,9 @@ const sqlConfig = {
   requestTimeout: 30000                         // 30s para evitar ETIMEOUT
 };
 
+export const poolPromise = new sql.ConnectionPool(sqlConfig).connect();
+export { sql };
+
 async function testConnection() {
   try {
     const pool = await sql.connect(sqlConfig);
