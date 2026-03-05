@@ -15,7 +15,7 @@ Ponce Sánchez Susan Jeannette   29-0460-2020
 FECHA: 01/MARZO/2026
 */
 
-/*import sql from "mssql";
+import sql from "mssql";
 
 const sqlConfig = {
   server: process.env.SQL_SERVER,
@@ -32,8 +32,9 @@ const sqlConfig = {
 };
 
 export const poolPromise = new sql.ConnectionPool(sqlConfig).connect();
-export { sql };*/
+export { sql };
 
+/*
 // test-sql-direct.js
 import sql from "mssql";
 
@@ -70,6 +71,6 @@ async function testConnection() {
 testConnection();
 
 export const poolPromise = new sql.ConnectionPool(sqlConfig).connect();
-export { sql };
+export { sql };*/
 
 
