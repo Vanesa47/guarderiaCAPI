@@ -16,17 +16,16 @@ FECHA: 01/MARZO/2026
 */
 
 import sql from "mssql";
-import dotenv from "dotenv";
-dotenv.config();
 
 const sqlConfig = {
   server: process.env.SQL_SERVER,
   database: process.env.SQL_DATABASE,
   user: process.env.SQL_USER,
   password: process.env.SQL_PASSWORD,
+  port: 1433,
   options: {
-    encrypt: String(process.env.SQL_ENCRYPT || "false").toLowerCase() === "true",
-    trustServerCertificate: true
+    encrypt: true,
+    trustServerCertificate: false
   },
   pool: { max: 10, min: 0, idleTimeoutMillis: 30000 }
 };
