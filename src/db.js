@@ -15,13 +15,17 @@ Ponce Sánchez Susan Jeannette   29-0460-2020
 FECHA: 01/MARZO/2026
 */
 
-/*import sql from "mssql";
+import sql from "mssql";
 
 const sqlConfig = {
-  server: process.env.SQL_SERVER,
+  /*server: process.env.SQL_SERVER,
   database: process.env.SQL_DATABASE,
   user: process.env.SQL_USER,
-  password: process.env.SQL_PASSWORD,
+  password: process.env.SQL_PASSWORD,*/
+  server: "capiserver.database.windows.net",  // tu servidor Azure SQL
+  database: "GuarderiaDB",                     // tu base de datos
+  user: "admincapi@capiserver",                // usuario con @servername
+  password: "Vanesa47",                        // tu contraseña
   port: 1433,
   options: {
     encrypt: true,
@@ -32,9 +36,9 @@ const sqlConfig = {
 };
 
 export const poolPromise = new sql.ConnectionPool(sqlConfig).connect();
-export { sql };*/
+export { sql };
 
-// test-sql-direct.js
+/*// test-sql-direct.js
 import sql from "mssql";
 
 // Configuración completa con usuario y contraseña explícitos
@@ -70,4 +74,4 @@ async function testConnection() {
 testConnection();
 
 export const poolPromise = new sql.ConnectionPool(sqlConfig).connect();
-export { sql };
+export { sql };*/
