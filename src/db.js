@@ -27,7 +27,8 @@ const sqlConfig = {
     encrypt: true,
     trustServerCertificate: false
   },
-  pool: { max: 10, min: 0, idleTimeoutMillis: 30000 }
+  pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
+  requestTimeout: 30000
 };
 
 export const poolPromise = new sql.ConnectionPool(sqlConfig).connect();
