@@ -15,7 +15,7 @@ Ponce Sánchez Susan Jeannette   29-0460-2020
 FECHA: 01/MARZO/2026
 */
 
-import sql from "mssql";
+/*import sql from "mssql";
 
 const sqlConfig = {
   server: process.env.SQL_SERVER,
@@ -30,6 +30,44 @@ const sqlConfig = {
   pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
   requestTimeout: 30000
 };
+
+export const poolPromise = new sql.ConnectionPool(sqlConfig).connect();
+export { sql };*/
+
+// test-sql-direct.js
+import sql from "mssql";
+
+// Configuración completa con usuario y contraseña explícitos
+const sqlConfig = {
+  server: "capiserver.database.windows.net",  // tu servidor Azure SQL
+  database: "GuarderiaDB",                     // tu base de datos
+  user: "admincapi@capiserver",                // usuario con @servername
+  password: "Vanesa47",                        // tu contraseña
+  port: 1433,
+  options: {
+    encrypt: true,                             // obligatorio en Azure SQL
+    trustServerCertificate: false
+  },
+  pool: {
+    max: 1,
+    min: 0,
+    idleTimeoutMillis: 30000
+  },
+  requestTimeout: 30000                         // 30s para evitar ETIMEOUT
+};
+
+async function testConnection() {
+  try {
+    const pool = await sql.connect(sqlConfig);
+    const result = await pool.request().query("SELECT 1 AS result");
+    console.log("✅ Conexión exitosa a SQL:", result.recordset);
+    await pool.close();
+  } catch (err) {
+    console.error("❌ Error de conexión SQL:", err);
+  }
+}
+
+testConnection();
 
 export const poolPromise = new sql.ConnectionPool(sqlConfig).connect();
 export { sql };
