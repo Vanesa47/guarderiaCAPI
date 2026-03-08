@@ -1,3 +1,19 @@
+/*
+PROYECTO: Sistema de Gestión para Guardería con Autenticación Segura,
+Control de Acceso y Protección de Datos para el CAPI Pasito a Pasito – Colegio “Prudencia Ayala.
+
+INSTITUCION: UTEC – Universidad Tecnológica de El Salvador
+CURSO: Seguridad de aplicaciones seguras
+DOCENTE: Ing. José Manuel Martínez
+PRE ESPECIALIDAD: Ingeniería en Ciberseguridad
+
+ESTUDIANTES:
+Cabrera Gonzales Josué Balmore  29-2594-2021
+Cardona Pérez Karen Vanesa      29-1944-2020
+Ponce Sánchez Susan Jeannette   29-0460-2020
+
+FECHA: 01/MARZO/2026
+*/
 
 import express from "express";
 import helmet from "helmet";
@@ -13,7 +29,7 @@ import { requireAuth, requireRole, assertChildBelongsToParent } from "./auth.js"
 import { decryptAesGcm } from "./crypto.js";
 
 
-
+dotenv.config();
 const app = express();
 app.use(helmet());
 app.use(cors({
@@ -102,7 +118,9 @@ app.post("/auth/login", async (req, res) => {
 
     const token = signToken(u);
     setAuthCookie(res, token);
+
 console.log("✅ Cookie enviada:", token.substring(0, 20) + "...");
+
     res.json({ ok: true });
   } catch (e) {
     console.error(e);

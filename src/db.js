@@ -14,17 +14,17 @@ Ponce Sánchez Susan Jeannette   29-0460-2020
 
 FECHA: 01/MARZO/2026
 */
-import dotenv from "dotenv";
+/*import dotenv from "dotenv";
 import path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath } from "url";*/
 import sql from "mssql";
 
-const __filename = fileURLToPath(import.meta.url);
+/*const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config({
   path: path.resolve(__dirname, "../.env")
-});
+});*/
 
 const sqlConfig = {
   server: process.env.SQL_SERVER,

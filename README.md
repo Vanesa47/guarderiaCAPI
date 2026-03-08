@@ -8,7 +8,7 @@ Proyecto demo **funcional** para probar:
 - Endpoints con **RBAC** (Admin/Maestro/Padre) + **scope** básico:
   - Padre: solo puede ver/crear recursos de sus hijos
   - Maestro: puede registrar bitácora para cualquier niño (demo) y ver asistencia (demo)
-  - Admin: puede crear/gestionar
+  - Admin: puede crear/gestionar.
 
 ## 1) Crear base de datos
 Ejecuta en SSMS:
