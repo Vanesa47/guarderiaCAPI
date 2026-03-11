@@ -121,7 +121,7 @@ app.post("/auth/login", async (req, res) => {
 
 console.log("✅ Cookie enviada:", token.substring(0, 20) + "...");
 
-    res.json({ ok: true });
+    res.json({ ok: true, auth: token });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Error interno" });
