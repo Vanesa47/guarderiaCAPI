@@ -30,7 +30,9 @@ export function requireRole(...allowed) {
 /** Auth + timeout 1 minuto basado en Usuarios.UltimaActividad */
 export async function requireAuth(req, res, next) {
   try {
-    const token = req.cookies?.auth;
+    const authHeader = req.headers.authorization;
+    const token =   (authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null)
+                    || req.cookies?.auth;
     if (!token) return res.status(401).json({ error: "No autenticado" });
 
     let decoded;
