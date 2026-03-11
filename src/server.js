@@ -51,7 +51,7 @@ function setAuthCookie(res, token) {
   res.cookie("auth", token, {
     httpOnly: true,
     secure: false,
-    sameSite: "lax",
+    sameSite: "none",
     path: "/",         // ← AGREGADO
     maxAge: 900000     // ← AGREGADO (15 minutos)
   });
