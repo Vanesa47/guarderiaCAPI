@@ -31,6 +31,7 @@ import { decryptAesGcm } from "./crypto.js";
 
 dotenv.config();
 const app = express();
+app.set("trust proxy", 1);
 app.use(helmet());
 app.use(cors({
   origin: "http://localhost:4200",
@@ -50,7 +51,7 @@ function signToken(u) {
 function setAuthCookie(res, token) {
   res.cookie("auth", token, {
     httpOnly: true,
-    secure: false,
+    secure: true,
     sameSite: "none",
     path: "/",         // ← AGREGADO
     maxAge: 900000     // ← AGREGADO (15 minutos)
