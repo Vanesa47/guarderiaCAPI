@@ -27,7 +27,6 @@ export function requireRole(...allowed) {
   };
 }
 
-/** Auth + timeout 1 minuto basado en Usuarios.UltimaActividad */
 export async function requireAuth(req, res, next) {
   try {
     const token = req.cookies?.auth;
@@ -36,7 +35,7 @@ export async function requireAuth(req, res, next) {
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch {
+    } catch (e) {
       return res.status(401).json({ error: "Token inválido/expirado" });
     }
 
@@ -44,7 +43,8 @@ export async function requireAuth(req, res, next) {
     const r = await pool.request()
       .input("id", sql.Int, decoded.sub)
       .query(`
-        SELECT u.IdUsuario, u.Email, u.IdRole, u.EstaActivo, u.UltimaActividad, r.NombreRole
+        SELECT u.IdUsuario, u.Email, u.IdRole, u.EstaActivo, r.NombreRole,
+               DATEDIFF(second, u.UltimaActividad, GETUTCDATE()) AS SegundosInactivo
         FROM Usuarios u
         INNER JOIN Roles r ON r.IdRole = u.IdRole
         WHERE u.IdUsuario = @id
@@ -53,17 +53,16 @@ export async function requireAuth(req, res, next) {
     const u = r.recordset[0];
     if (!u || !u.EstaActivo) return res.status(401).json({ error: "Usuario inactivo" });
 
-    const last = new Date(u.UltimaActividad);
-    const diff = Date.now() - last.getTime();
-    if (diff > 60_000) {
+    const timeoutSegundos = Math.floor(Number(process.env.SESSION_TIMEOUT_MS || 1_800_000) / 1000);
+
+    if (u.SegundosInactivo > timeoutSegundos) {
       res.clearCookie("auth");
-      return res.status(401).json({ error: "Sesión expirada por inactividad (>1 min)" });
+      return res.status(401).json({ error: "Sesión expirada por inactividad" });
     }
 
-    // Sliding update
     await pool.request()
       .input("id", sql.Int, u.IdUsuario)
-      .query(`UPDATE Usuarios SET UltimaActividad = GETDATE() WHERE IdUsuario = @id`);
+      .query(`UPDATE Usuarios SET UltimaActividad = GETUTCDATE() WHERE IdUsuario = @id`);
 
     req.user = {
       id: u.IdUsuario,
@@ -72,14 +71,13 @@ export async function requireAuth(req, res, next) {
       roleName: u.NombreRole
     };
 
-    next();
+   next();
   } catch (e) {
-    console.error(e);
+    console.error("💥 Error en requireAuth:", e);
     res.status(500).json({ error: "Error interno" });
   }
 }
 
-/** Scope helper: devuelve IdTutor del padre (si existe) */
 export async function getTutorIdForUser(userId) {
   const pool = await poolPromise;
   const r = await pool.request()
@@ -88,7 +86,6 @@ export async function getTutorIdForUser(userId) {
   return r.recordset[0]?.IdTutor ?? null;
 }
 
-/** Padre: valida que el niño pertenezca al tutor del usuario */
 export async function assertChildBelongsToParent(userId, idNino) {
   const tutorId = await getTutorIdForUser(userId);
   if (!tutorId) return false;

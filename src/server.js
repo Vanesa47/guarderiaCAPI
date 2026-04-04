@@ -90,21 +90,27 @@ app.post("/auth/login", async (req, res) => {
 
       if (nextFails >= 3) {
         await pool.request()
-          .input("id", sql.Int, u.IdUsuario)
+          .input("id",    sql.Int, u.IdUsuario)
+          .input("fails", sql.Int, nextFails)
           .query(`
             UPDATE Usuarios
-            SET IntentosFallidos=${nextFails}, BloqueadoHasta=DATEADD(minute, 15, GETDATE())
-            WHERE IdUsuario=@id
+            SET IntentosFallidos = @fails,
+                BloqueadoHasta   = DATEADD(minute, 15, GETDATE())
+            WHERE IdUsuario = @id
           `);
-      } else {
-        await pool.request()
-          .input("id", sql.Int, u.IdUsuario)
-          .query(`
-            UPDATE Usuarios
-            SET IntentosFallidos=${nextFails}
-            WHERE IdUsuario=@id
-          `);
+
+
+        return res.status(423).json({ error: "Cuenta bloqueada por intentos fallidos. Intenta luego." });
       }
+
+      await pool.request()
+        .input("id",    sql.Int, u.IdUsuario)
+        .input("fails", sql.Int, nextFails)
+        .query(`
+          UPDATE Usuarios
+          SET IntentosFallidos = @fails
+          WHERE IdUsuario = @id
+        `);
 
       return genericFail();
     }
@@ -113,8 +119,8 @@ app.post("/auth/login", async (req, res) => {
       .input("id", sql.Int, u.IdUsuario)
       .query(`
         UPDATE Usuarios
-        SET IntentosFallidos=0, BloqueadoHasta=NULL, UltimaActividad=GETUTCDATE()
-        WHERE IdUsuario=@id
+        SET IntentosFallidos = 0, BloqueadoHasta = NULL, UltimaActividad = GETUTCDATE()
+        WHERE IdUsuario = @id
       `);
 
     const token = signToken(u);
@@ -138,6 +144,31 @@ app.get("/me", requireAuth, (req, res) => {
   res.json(req.user);
 });
 
+app.post("/auth/register", requireAuth, requireRole("Admin"), async (req, res) => {
+  try {
+    const { email, password, idRole } = req.body;
+
+    const pool = await poolPromise;
+    const saltRounds = 12;
+    const hash = await bcrypt.hash(password, saltRounds);
+
+    const result = await pool.request()
+      .input("Email", sql.NVarChar(100), email)
+      .input("Hash", sql.NVarChar(sql.MAX), hash)
+      .input("Role", sql.Int, idRole)
+      .execute("CrearUsuario");
+
+    res.json({
+      ok: true,
+      IdUsuario: result.recordset[0].IdUsuario
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ ok: false, msg: "Error al registrar usuario" });
+  }
+});
+
 /* -------------------- Admin endpoints (demo) -------------------- */
 app.get("/admin/usuarios", requireAuth, requireRole("Admin"), async (req, res) => {
   const pool = await poolPromise;
@@ -149,13 +180,157 @@ app.get("/admin/usuarios", requireAuth, requireRole("Admin"), async (req, res) =
   res.json(r.recordset);
 });
 
+app.post("/ninos", requireAuth, requireRole("Maestro", "Admin"), async (req, res) => {
+  const { idTutor, nombre, apellido, fechaNacimiento, alergias, grupo } = req.body || {};
+
+  if (!idTutor || !nombre || !apellido || !fechaNacimiento || !grupo) {
+    return res.status(400).json({ error: "Campos requeridos: idTutor, nombre, apellido, fechaNacimiento, grupo" });
+  }
+
+  const tutorId = Number(idTutor);
+  if (!Number.isInteger(tutorId)) return res.status(400).json({ error: "idTutor inválido" });
+
+  try {
+    const pool = await poolPromise;
+
+    // Verificar que el tutor existe
+    const rTutor = await pool.request()
+      .input("idTutor", sql.Int, tutorId)
+      .query(`SELECT 1 AS ok FROM Tutores WHERE IdTutor = @idTutor`);
+
+    if (!rTutor.recordset[0]?.ok) {
+      return res.status(404).json({ error: "Tutor no encontrado" });
+    }
+
+    const result = await pool.request()
+      .input("idTutor",        sql.Int,          tutorId)
+      .input("nombre",         sql.NVarChar(100), String(nombre).trim())
+      .input("apellido",       sql.NVarChar(100), String(apellido).trim())
+      .input("fechaNacimiento",sql.Date,          new Date(fechaNacimiento))
+      .input("alergias",       sql.NVarChar(255), alergias ? String(alergias).trim() : null)
+      .input("grupo",          sql.NVarChar(50),  String(grupo).trim())
+      .query(`
+        INSERT INTO Ninos (IdTutor, Nombre, Apellido, FechaNacimiento, Alergias, Grupo)
+        OUTPUT INSERTED.IdNino
+        VALUES (@idTutor, @nombre, @apellido, @fechaNacimiento, @alergias, @grupo)
+      `);
+
+    res.status(201).json({ ok: true, IdNino: result.recordset[0].IdNino });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al registrar niño" });
+  }
+});
+
+
+app.get("/ninos", requireAuth, requireRole("Maestro", "Admin"), async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    const r = await pool.request().query(`
+      SELECT n.IdNino, n.IdTutor, n.Nombre, n.Apellido, n.FechaNacimiento, n.Alergias, n.Grupo,
+             t.Nombre AS TutorNombre, t.Apellido AS TutorApellido
+      FROM Ninos n
+      INNER JOIN Tutores t ON t.IdTutor = n.IdTutor
+      ORDER BY n.IdNino DESC
+    `);
+    res.json(r.recordset);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener niños" });
+  }
+});
+
+/** Obtener un niño por ID (Maestro o Admin) */
+app.get("/ninos/:id", requireAuth, requireRole("Maestro", "Admin"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "ID inválido" });
+
+  try {
+    const pool = await poolPromise;
+    const r = await pool.request()
+      .input("id", sql.Int, id)
+      .query(`
+        SELECT n.IdNino, n.IdTutor, n.Nombre, n.Apellido, n.FechaNacimiento, n.Alergias, n.Grupo,
+               t.Nombre AS TutorNombre, t.Apellido AS TutorApellido
+        FROM Ninos n
+        INNER JOIN Tutores t ON t.IdTutor = n.IdTutor
+        WHERE n.IdNino = @id
+      `);
+
+    if (!r.recordset[0]) return res.status(404).json({ error: "Niño no encontrado" });
+    res.json(r.recordset[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener niño" });
+  }
+});
+
+/** Actualizar niño (Maestro o Admin) */
+app.put("/ninos/:id", requireAuth, requireRole("Maestro", "Admin"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "ID inválido" });
+
+  const { idTutor, nombre, apellido, fechaNacimiento, alergias, grupo } = req.body || {};
+  if (!idTutor || !nombre || !apellido || !fechaNacimiento || !grupo)
+    return res.status(400).json({ error: "Campos requeridos: idTutor, nombre, apellido, fechaNacimiento, grupo" });
+
+  try {
+    const pool = await poolPromise;
+    const r = await pool.request()
+      .input("id",              sql.Int,           id)
+      .input("idTutor",         sql.Int,           Number(idTutor))
+      .input("nombre",          sql.NVarChar(100), String(nombre).trim())
+      .input("apellido",        sql.NVarChar(100), String(apellido).trim())
+      .input("fechaNacimiento", sql.Date,          new Date(fechaNacimiento))
+      .input("alergias",        sql.NVarChar(255), alergias ? String(alergias).trim() : null)
+      .input("grupo",           sql.NVarChar(50),  String(grupo).trim())
+      .query(`
+        UPDATE Ninos
+        SET IdTutor=@idTutor, Nombre=@nombre, Apellido=@apellido,
+            FechaNacimiento=@fechaNacimiento, Alergias=@alergias, Grupo=@grupo
+        WHERE IdNino=@id;
+        SELECT @@ROWCOUNT AS affected;
+      `);
+
+    if ((r.recordset[0]?.affected || 0) === 0)
+      return res.status(404).json({ error: "Niño no encontrado" });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al actualizar niño" });
+  }
+});
+
+/** Eliminar niño (solo Admin) */
+app.delete("/ninos/:id", requireAuth, requireRole("Admin"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "ID inválido" });
+
+  try {
+    const pool = await poolPromise;
+    const r = await pool.request()
+      .input("id", sql.Int, id)
+      .query(`DELETE FROM Ninos WHERE IdNino=@id; SELECT @@ROWCOUNT AS affected;`);
+
+    if ((r.recordset[0]?.affected || 0) === 0)
+      return res.status(404).json({ error: "Niño no encontrado" });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al eliminar niño" });
+  }
+});
+
 /* -------------------- Padre endpoints -------------------- */
 /** Listar mis niños (Padre) */
 app.get("/padre/ninos", requireAuth, requireRole("Padre"), async (req, res) => {
   const pool = await poolPromise;
   const rTutor = await pool.request()
     .input("idUsuario", sql.Int, req.user.id)
-    .query(`SELECT IdTutor, Nombre, Apellido, TelefonoCifrado, DireccionCifrada FROM Tutores WHERE IdUsuario=@idUsuario`);
+ .query(`SELECT IdTutor, Nombre, Apellido, TelefonoCifrado, DireccionCifrada FROM Tutores WHERE IdUsuario=@idUsuario`);
 
   const tutor = rTutor.recordset[0];
   if (!tutor) return res.json({ tutor: null, ninos: [] });
@@ -177,7 +352,7 @@ app.get("/padre/ninos", requireAuth, requireRole("Padre"), async (req, res) => {
 });
 
 /** Ver bitácora de un niño (Padre) */
-app.get("/padre/ninos/:idNino/bitacora", requireAuth, requireRole("Padre"), async (req, res) => {
+app.get("/padre/ninos/:idNino/bitacora", requireAuth, requireRole("Padre","Admin"), async (req, res) => {
   const idNino = Number(req.params.idNino);
   if (!Number.isInteger(idNino)) return res.status(400).json({ error: "IdNino inválido" });
 
