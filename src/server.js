@@ -400,6 +400,37 @@ app.post("/bitacora", requireAuth, requireRole("Maestro","Admin"), async (req, r
   res.status(201).json({ ok: true });
 });
 
+/** Ver bitácora de un niño (Maestro o Admin) */
+app.get("/bitacora/:idNino", requireAuth, requireRole("Maestro","Admin"), async (req, res) => {
+  const idNino = Number(req.params.idNino);
+  if (!Number.isInteger(idNino)) return res.status(400).json({ error: "IdNino inválido" });
+
+  const pool = await poolPromise;
+  const r = await pool.request()
+    .input("idNino", sql.Int, idNino)
+    .query(`
+      SELECT IdLog, Fecha, Comida, SiestaMinutos, Observaciones, EstadoAnimo, IdMaestro
+      FROM BitacoraDiaria
+      WHERE IdNino=@idNino
+      ORDER BY Fecha DESC
+    `);
+
+  res.json(r.recordset);
+});
+
+/** Ver todas las bitácoras (Maestro o Admin) */
+app.get("/bitacora", requireAuth, requireRole("Maestro","Admin"), async (req, res) => {
+  const pool = await poolPromise;
+  const r = await pool.request().query(`
+    SELECT b.IdLog, b.Fecha, b.Comida, b.SiestaMinutos, b.Observaciones, b.EstadoAnimo, b.IdMaestro,
+           n.Nombre AS NinoNombre, n.Apellido AS NinoApellido
+    FROM BitacoraDiaria b
+    INNER JOIN Ninos n ON n.IdNino = b.IdNino
+    ORDER BY b.Fecha DESC
+  `);
+  res.json(r.recordset);
+});
+
 /** Check-in (Maestro o Admin) */
 app.post("/asistencia/checkin", requireAuth, requireRole("Maestro","Admin"), async (req, res) => {
   const { idNino } = req.body || {};
