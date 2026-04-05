@@ -26,7 +26,7 @@ import jwt from "jsonwebtoken";
 
 import { poolPromise, sql } from "./db.js";
 import { requireAuth, requireRole, assertChildBelongsToParent } from "./auth.js";
-import { decryptAesGcm } from "./crypto.js";
+import { encryptAesGcm, decryptAesGcm } from "./crypto.js";
 
 
 dotenv.config();
@@ -166,6 +166,174 @@ app.post("/auth/register", requireAuth, requireRole("Admin"), async (req, res) =
   } catch (error) {
     console.error(error);
     res.status(500).json({ ok: false, msg: "Error al registrar usuario" });
+  }
+});
+
+/* -------------------- Agregar tutor (Admin) -------------------- */
+app.post("/tutores", requireAuth, requireRole("Admin"), async (req, res) => {
+  const { idUsuario, nombre, apellido, telefono, direccion } = req.body || {};
+
+  if (!idUsuario || !nombre || !apellido || !telefono || !direccion) {
+    return res.status(400).json({ error: "Campos requeridos: idUsuario, nombre, apellido, telefono, direccion" });
+  }
+
+  try {
+    const pool = await poolPromise;
+
+    // Verificar que el usuario existe y está activo
+    const rUser = await pool.request()
+      .input("id", sql.Int, Number(idUsuario))
+      .query(`SELECT EstaActivo FROM Usuarios WHERE IdUsuario = @id`);
+
+    if (!rUser.recordset[0] || !rUser.recordset[0].EstaActivo) {
+      return res.status(400).json({ error: "Usuario no encontrado o inactivo" });
+    }
+
+    // Verificar que no exista ya un tutor para este usuario
+    const rTutor = await pool.request()
+      .input("id", sql.Int, Number(idUsuario))
+      .query(`SELECT 1 AS ok FROM Tutores WHERE IdUsuario = @id`);
+
+    if (rTutor.recordset[0]?.ok) {
+      return res.status(400).json({ error: "Tutor ya existe para este usuario" });
+    }
+
+    // Encriptar datos sensibles
+    const telCifrado = encryptAesGcm(String(telefono).trim());
+    const dirCifrada = encryptAesGcm(String(direccion).trim());
+
+    // Insertar tutor
+    const result = await pool.request()
+      .input("idUsuario", sql.Int, Number(idUsuario))
+      .input("nombre", sql.NVarChar(100), String(nombre).trim())
+      .input("apellido", sql.NVarChar(100), String(apellido).trim())
+      .input("tel", sql.NVarChar(sql.MAX), telCifrado)
+      .input("dir", sql.NVarChar(sql.MAX), dirCifrada)
+      .query(`
+        INSERT INTO Tutores (IdUsuario, Nombre, Apellido, TelefonoCifrado, DireccionCifrada)
+        OUTPUT INSERTED.IdTutor
+        VALUES (@idUsuario, @nombre, @apellido, @tel, @dir)
+      `);
+
+    res.status(201).json({ ok: true, IdTutor: result.recordset[0].IdTutor });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al registrar tutor" });
+  }
+});
+
+/* -------------------- Ver tutores (Admin) -------------------- */
+app.get("/tutores", requireAuth, requireRole("Admin"), async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    const r = await pool.request().query(`
+      SELECT t.IdTutor, t.IdUsuario, t.Nombre, t.Apellido, t.TelefonoCifrado, t.DireccionCifrada,
+             u.Email
+      FROM Tutores t
+      INNER JOIN Usuarios u ON u.IdUsuario = t.IdUsuario
+      ORDER BY t.IdTutor
+    `);
+
+    // Desencriptar datos sensibles para vista de admin
+    const tutors = r.recordset.map(t => ({
+      idTutor: t.IdTutor,
+      idUsuario: t.IdUsuario,
+      nombre: t.Nombre,
+      apellido: t.Apellido,
+      telefono: decryptAesGcm(t.TelefonoCifrado),
+      direccion: decryptAesGcm(t.DireccionCifrada),
+      email: t.Email
+    }));
+
+    res.json(tutors);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener tutores" });
+  }
+});
+
+/* -------------------- Modificar tutor (Admin) -------------------- */
+app.put("/tutores/:id", requireAuth, requireRole("Admin"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "ID inválido" });
+
+  const { nombre, apellido, telefono, direccion } = req.body || {};
+  if (!nombre || !apellido || !telefono || !direccion) {
+    return res.status(400).json({ error: "Campos requeridos: nombre, apellido, telefono, direccion" });
+  }
+
+  try {
+    const pool = await poolPromise;
+
+    // Verificar que el tutor existe
+    const rTutor = await pool.request()
+      .input("id", sql.Int, id)
+      .query(`SELECT 1 AS ok FROM Tutores WHERE IdTutor = @id`);
+
+    if (!rTutor.recordset[0]?.ok) {
+      return res.status(404).json({ error: "Tutor no encontrado" });
+    }
+
+    // Encriptar datos sensibles
+    const telCifrado = encryptAesGcm(String(telefono).trim());
+    const dirCifrada = encryptAesGcm(String(direccion).trim());
+
+    // Actualizar
+    const r = await pool.request()
+      .input("id", sql.Int, id)
+      .input("nombre", sql.NVarChar(100), String(nombre).trim())
+      .input("apellido", sql.NVarChar(100), String(apellido).trim())
+      .input("tel", sql.NVarChar(sql.MAX), telCifrado)
+      .input("dir", sql.NVarChar(sql.MAX), dirCifrada)
+      .query(`
+        UPDATE Tutores
+        SET Nombre=@nombre, Apellido=@apellido, TelefonoCifrado=@tel, DireccionCifrada=@dir
+        WHERE IdTutor=@id;
+        SELECT @@ROWCOUNT AS affected;
+      `);
+
+    if ((r.recordset[0]?.affected || 0) === 0) {
+      return res.status(404).json({ error: "Tutor no encontrado" });
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al actualizar tutor" });
+  }
+});
+
+/* -------------------- Eliminar tutor (Admin) -------------------- */
+app.delete("/tutores/:id", requireAuth, requireRole("Admin"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "ID inválido" });
+
+  try {
+    const pool = await poolPromise;
+
+    // Verificar que no tenga niños asociados
+    const rNinos = await pool.request()
+      .input("id", sql.Int, id)
+      .query(`SELECT COUNT(*) AS count FROM Ninos WHERE IdTutor = @id`);
+
+    if (rNinos.recordset[0].count > 0) {
+      return res.status(400).json({ error: "No se puede eliminar tutor con niños asociados" });
+    }
+
+    // Eliminar
+    const r = await pool.request()
+      .input("id", sql.Int, id)
+      .query(`DELETE FROM Tutores WHERE IdTutor=@id; SELECT @@ROWCOUNT AS affected;`);
+
+    if ((r.recordset[0]?.affected || 0) === 0) {
+      return res.status(404).json({ error: "Tutor no encontrado" });
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al eliminar tutor" });
   }
 });
 
