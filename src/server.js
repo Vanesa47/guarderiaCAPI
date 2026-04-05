@@ -431,6 +431,109 @@ app.get("/bitacora", requireAuth, requireRole("Maestro","Admin"), async (req, re
   res.json(r.recordset);
 });
 
+/* -------------------- Notas de competencias -------------------- */
+app.post("/notas-competencias", requireAuth, requireRole("Maestro","Admin"), async (req, res) => {
+  const { idNino, competencia, nota, comentarios=null } = req.body || {};
+  const ninoId = Number(idNino);
+  const notaValue = Number(nota);
+
+  if (!Number.isInteger(ninoId)) return res.status(400).json({ error: "idNino requerido" });
+  if (!competencia || typeof competencia !== "string") return res.status(400).json({ error: "Competencia requerida" });
+  if (Number.isNaN(notaValue) || notaValue < 1 || notaValue > 10) return res.status(400).json({ error: "Nota debe estar entre 1.00 y 10.00" });
+
+  const pool = await poolPromise;
+  const rN = await pool.request().input("id", sql.Int, ninoId).query(`SELECT 1 AS ok FROM Ninos WHERE IdNino=@id`);
+  if (!rN.recordset[0]?.ok) return res.status(404).json({ error: "Niño no existe" });
+
+  const result = await pool.request()
+    .input("idNino", sql.Int, ninoId)
+    .input("idMaestro", sql.Int, req.user.id)
+    .input("competencia", sql.NVarChar(100), String(competencia).trim())
+    .input("nota", sql.Decimal(4,2), notaValue)
+    .input("comentarios", sql.NVarChar(sql.MAX), comentarios)
+    .query(`
+      INSERT INTO NotasCompetencias (IdNino, IdMaestro, Competencia, Nota, Comentarios)
+      OUTPUT INSERTED.IdNota
+      VALUES (@idNino, @idMaestro, @competencia, @nota, @comentarios)
+    `);
+
+  res.status(201).json({ ok: true, IdNota: result.recordset[0].IdNota });
+});
+
+app.get("/notas-competencias", requireAuth, requireRole("Maestro","Admin"), async (req, res) => {
+  const pool = await poolPromise;
+  const r = await pool.request().query(`
+    SELECT nc.IdNota, nc.Fecha, nc.Competencia, nc.Nota, nc.Comentarios,
+           n.IdNino, n.Nombre AS NinoNombre, n.Apellido AS NinoApellido,
+           u.IdUsuario AS IdMaestro, u.Email AS MaestroEmail
+    FROM NotasCompetencias nc
+    INNER JOIN Ninos n ON n.IdNino = nc.IdNino
+    LEFT JOIN Usuarios u ON u.IdUsuario = nc.IdMaestro
+    ORDER BY nc.Fecha DESC
+  `);
+  res.json(r.recordset);
+});
+
+app.get("/notas-competencias/nino/:idNino", requireAuth, requireRole("Maestro","Admin"), async (req, res) => {
+  const idNino = Number(req.params.idNino);
+  if (!Number.isInteger(idNino)) return res.status(400).json({ error: "IdNino inválido" });
+
+  const pool = await poolPromise;
+  const r = await pool.request()
+    .input("idNino", sql.Int, idNino)
+    .query(`
+      SELECT nc.IdNota, nc.Fecha, nc.Competencia, nc.Nota, nc.Comentarios,
+             u.IdUsuario AS IdMaestro, u.Email AS MaestroEmail
+      FROM NotasCompetencias nc
+      LEFT JOIN Usuarios u ON u.IdUsuario = nc.IdMaestro
+      WHERE nc.IdNino=@idNino
+      ORDER BY nc.Fecha DESC
+    `);
+  res.json(r.recordset);
+});
+
+app.put("/notas-competencias/:idNota", requireAuth, requireRole("Maestro","Admin"), async (req, res) => {
+  const idNota = Number(req.params.idNota);
+  const { competencia, nota, comentarios=null } = req.body || {};
+  const notaValue = Number(nota);
+
+  if (!Number.isInteger(idNota)) return res.status(400).json({ error: "IdNota inválido" });
+  if (!competencia || typeof competencia !== "string") return res.status(400).json({ error: "Competencia requerida" });
+  if (Number.isNaN(notaValue) || notaValue < 1 || notaValue > 10) return res.status(400).json({ error: "Nota debe estar entre 1.00 y 10.00" });
+
+  const pool = await poolPromise;
+  const r = await pool.request()
+    .input("idNota", sql.Int, idNota)
+    .input("competencia", sql.NVarChar(100), String(competencia).trim())
+    .input("nota", sql.Decimal(4,2), notaValue)
+    .input("comentarios", sql.NVarChar(sql.MAX), comentarios)
+    .query(`
+      UPDATE NotasCompetencias
+      SET Competencia=@competencia, Nota=@nota, Comentarios=@comentarios
+      WHERE IdNota=@idNota;
+      SELECT @@ROWCOUNT AS affected;
+    `);
+
+  if ((r.recordset[0]?.affected || 0) === 0) return res.status(404).json({ error: "Nota no encontrada" });
+  res.json({ ok: true });
+});
+
+app.delete("/notas-competencias/:idNota", requireAuth, requireRole("Maestro","Admin"), async (req, res) => {
+  const idNota = Number(req.params.idNota);
+  if (!Number.isInteger(idNota)) return res.status(400).json({ error: "IdNota inválido" });
+
+  const pool = await poolPromise;
+  const r = await pool.request()
+    .input("idNota", sql.Int, idNota)
+    .query(`
+      DELETE FROM NotasCompetencias WHERE IdNota=@idNota;
+      SELECT @@ROWCOUNT AS affected;
+    `);
+
+  if ((r.recordset[0]?.affected || 0) === 0) return res.status(404).json({ error: "Nota no encontrada" });
+  res.json({ ok: true });
+});
+
 /** Check-in (Maestro o Admin) */
 app.post("/asistencia/checkin", requireAuth, requireRole("Maestro","Admin"), async (req, res) => {
   const { idNino } = req.body || {};

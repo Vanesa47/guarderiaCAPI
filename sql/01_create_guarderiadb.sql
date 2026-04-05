@@ -105,7 +105,22 @@ GO
 CREATE INDEX IX_Bitacora_NinoFecha ON dbo.BitacoraDiaria(IdNino, Fecha DESC);
 GO
 
-/* 6) Asistencia */
+/* 6) Notas de competencias */
+CREATE TABLE dbo.NotasCompetencias (
+    IdNota INT IDENTITY(1,1) PRIMARY KEY,
+    IdNino INT NOT NULL,
+    IdMaestro INT NULL,
+    Fecha DATETIME NOT NULL CONSTRAINT DF_NotasCompetencias_Fecha DEFAULT GETDATE(),
+    Competencia NVARCHAR(100) NOT NULL,
+    Nota DECIMAL(4,2) NULL,
+    Comentarios NVARCHAR(MAX) NULL,
+    CONSTRAINT FK_NotasCompetencias_Ninos FOREIGN KEY (IdNino) REFERENCES dbo.Ninos(IdNino),
+    CONSTRAINT FK_NotasCompetencias_Usuarios FOREIGN KEY (IdMaestro) REFERENCES dbo.Usuarios(IdUsuario),
+    CONSTRAINT CK_NotasCompetencias_Nota CHECK (Nota BETWEEN 1.00 AND 10.00)
+);
+GO
+
+/* 7) Asistencia */
 CREATE TABLE dbo.Asistencia (
     IdAsistencia INT IDENTITY(1,1) PRIMARY KEY,
     IdNino INT NOT NULL,
