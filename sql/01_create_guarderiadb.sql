@@ -133,3 +133,22 @@ GO
 
 CREATE INDEX IX_Asistencia_NinoEntrada ON dbo.Asistencia(IdNino, HoraEntrada DESC);
 GO
+
+/* 8) Avisos */
+CREATE TABLE dbo.Avisos (
+    IdAviso INT IDENTITY(1,1) PRIMARY KEY,
+    Titulo NVARCHAR(200) NOT NULL,
+    Contenido NVARCHAR(MAX) NOT NULL,
+    Tipo NVARCHAR(50) NOT NULL, -- 'aviso', 'comunicado', 'actividad'
+    FechaCreacion DATETIME NOT NULL CONSTRAINT DF_Avisos_FechaCreacion DEFAULT GETDATE(),
+    FechaExpiracion DATETIME NULL,
+    IdAutor INT NOT NULL,
+    EstaActivo BIT NOT NULL CONSTRAINT DF_Avisos_Activo DEFAULT 1,
+    CONSTRAINT FK_Avisos_Usuarios FOREIGN KEY (IdAutor) REFERENCES dbo.Usuarios(IdUsuario),
+    CONSTRAINT CK_Avisos_Tipo CHECK (Tipo IN ('aviso', 'comunicado', 'actividad'))
+);
+GO
+
+CREATE INDEX IX_Avisos_FechaCreacion ON dbo.Avisos(FechaCreacion DESC);
+CREATE INDEX IX_Avisos_Tipo ON dbo.Avisos(Tipo);
+GO

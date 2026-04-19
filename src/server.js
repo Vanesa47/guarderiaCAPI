@@ -348,6 +348,255 @@ app.get("/admin/usuarios", requireAuth, requireRole("Admin"), async (req, res) =
   res.json(r.recordset);
 });
 
+app.put("/admin/usuarios/:id/password", requireAuth, requireRole("Admin"), async (req, res) => {
+  const id = Number(req.params.id);
+  const { password } = req.body || {};
+
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "ID inválido" });
+  if (!password || typeof password !== "string" || password.trim().length < 8) {
+    return res.status(400).json({ error: "Password requerido y debe tener al menos 8 caracteres" });
+  }
+
+  try {
+    const hash = await bcrypt.hash(password.trim(), 12);
+    const pool = await poolPromise;
+
+    const r = await pool.request()
+      .input("id", sql.Int, id)
+      .input("hash", sql.NVarChar(sql.MAX), hash)
+      .query(`
+        UPDATE Usuarios
+        SET PasswordHash = @hash,
+            IntentosFallidos = 0,
+            BloqueadoHasta = NULL
+        WHERE IdUsuario = @id;
+        SELECT @@ROWCOUNT AS affected;
+      `);
+
+    if ((r.recordset[0]?.affected || 0) === 0) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al cambiar contraseña" });
+  }
+});
+
+app.put("/admin/usuarios/:id/unlock", requireAuth, requireRole("Admin"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "ID inválido" });
+
+  try {
+    const pool = await poolPromise;
+    const r = await pool.request()
+      .input("id", sql.Int, id)
+      .query(`
+        UPDATE Usuarios
+        SET IntentosFallidos = 0,
+            BloqueadoHasta = NULL
+        WHERE IdUsuario = @id;
+        SELECT @@ROWCOUNT AS affected;
+      `);
+
+    if ((r.recordset[0]?.affected || 0) === 0) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al desbloquear usuario" });
+  }
+});
+
+/* -------------------- Avisos (Maestro/Admin) -------------------- */
+app.post("/avisos", requireAuth, requireRole("Maestro", "Admin"), async (req, res) => {
+  const { titulo, contenido, tipo, fechaExpiracion } = req.body || {};
+
+  if (!titulo || !contenido || !tipo) {
+    return res.status(400).json({ error: "Campos requeridos: titulo, contenido, tipo" });
+  }
+
+  if (!["aviso", "comunicado", "actividad"].includes(tipo)) {
+    return res.status(400).json({ error: "Tipo debe ser: aviso, comunicado o actividad" });
+  }
+
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .input("titulo", sql.NVarChar(200), String(titulo).trim())
+      .input("contenido", sql.NVarChar(sql.MAX), String(contenido).trim())
+      .input("tipo", sql.NVarChar(50), tipo)
+      .input("fechaExpiracion", sql.DateTime, fechaExpiracion ? new Date(fechaExpiracion) : null)
+      .input("idAutor", sql.Int, req.user.id)
+      .query(`
+        INSERT INTO Avisos (Titulo, Contenido, Tipo, FechaExpiracion, IdAutor)
+        OUTPUT INSERTED.IdAviso, INSERTED.FechaCreacion
+        VALUES (@titulo, @contenido, @tipo, @fechaExpiracion, @idAutor)
+      `);
+
+    res.status(201).json({
+      ok: true,
+      IdAviso: result.recordset[0].IdAviso,
+      FechaCreacion: result.recordset[0].FechaCreacion
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al crear aviso" });
+  }
+});
+
+app.get("/avisos", requireAuth, async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    const r = await pool.request().query(`
+      SELECT a.IdAviso, a.Titulo, a.Contenido, a.Tipo, a.FechaCreacion, a.FechaExpiracion,
+             u.Email AS AutorEmail, r.NombreRole AS AutorRole
+      FROM Avisos a
+      INNER JOIN Usuarios u ON u.IdUsuario = a.IdAutor
+      INNER JOIN Roles r ON r.IdRole = u.IdRole
+      WHERE a.EstaActivo = 1 AND (a.FechaExpiracion IS NULL OR a.FechaExpiracion > GETDATE())
+      ORDER BY a.FechaCreacion DESC
+    `);
+    res.json(r.recordset);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener avisos" });
+  }
+});
+
+app.get("/avisos/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "ID inválido" });
+
+  try {
+    const pool = await poolPromise;
+    const r = await pool.request()
+      .input("id", sql.Int, id)
+      .query(`
+        SELECT a.IdAviso, a.Titulo, a.Contenido, a.Tipo, a.FechaCreacion, a.FechaExpiracion,
+               u.Email AS AutorEmail, r.NombreRole AS AutorRole
+        FROM Avisos a
+        INNER JOIN Usuarios u ON u.IdUsuario = a.IdAutor
+        INNER JOIN Roles r ON r.IdRole = u.IdRole
+        WHERE a.IdAviso = @id AND a.EstaActivo = 1
+      `);
+
+    if (!r.recordset[0]) return res.status(404).json({ error: "Aviso no encontrado" });
+    res.json(r.recordset[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener aviso" });
+  }
+});
+
+app.put("/avisos/:id", requireAuth, requireRole("Maestro", "Admin"), async (req, res) => {
+  const id = Number(req.params.id);
+  const { titulo, contenido, tipo, fechaExpiracion } = req.body || {};
+
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "ID inválido" });
+  if (!titulo || !contenido || !tipo) {
+    return res.status(400).json({ error: "Campos requeridos: titulo, contenido, tipo" });
+  }
+
+  if (!["aviso", "comunicado", "actividad"].includes(tipo)) {
+    return res.status(400).json({ error: "Tipo debe ser: aviso, comunicado o actividad" });
+  }
+
+  try {
+    const pool = await poolPromise;
+
+    // Verificar que el aviso existe y el usuario puede editarlo (autor o admin)
+    const rCheck = await pool.request()
+      .input("id", sql.Int, id)
+      .query(`SELECT IdAutor FROM Avisos WHERE IdAviso = @id AND EstaActivo = 1`);
+
+    if (!rCheck.recordset[0]) return res.status(404).json({ error: "Aviso no encontrado" });
+
+    if (req.user.roleName !== "Admin" && rCheck.recordset[0].IdAutor !== req.user.id) {
+      return res.status(403).json({ error: "No autorizado para editar este aviso" });
+    }
+
+    const r = await pool.request()
+      .input("id", sql.Int, id)
+      .input("titulo", sql.NVarChar(200), String(titulo).trim())
+      .input("contenido", sql.NVarChar(sql.MAX), String(contenido).trim())
+      .input("tipo", sql.NVarChar(50), tipo)
+      .input("fechaExpiracion", sql.DateTime, fechaExpiracion ? new Date(fechaExpiracion) : null)
+      .query(`
+        UPDATE Avisos
+        SET Titulo = @titulo, Contenido = @contenido, Tipo = @tipo, FechaExpiracion = @fechaExpiracion
+        WHERE IdAviso = @id;
+        SELECT @@ROWCOUNT AS affected;
+      `);
+
+    if ((r.recordset[0]?.affected || 0) === 0) {
+      return res.status(404).json({ error: "Aviso no encontrado" });
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al actualizar aviso" });
+  }
+});
+
+app.delete("/avisos/:id", requireAuth, requireRole("Maestro", "Admin"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "ID inválido" });
+
+  try {
+    const pool = await poolPromise;
+    const r = await pool.request()
+      .input("id", sql.Int, id)
+      .query(`
+        UPDATE Avisos SET EstaActivo = 0 WHERE IdAviso = @id;
+        SELECT @@ROWCOUNT AS affected;
+      `);
+
+    if ((r.recordset[0]?.affected || 0) === 0) {
+      return res.status(404).json({ error: "Aviso no encontrado" });
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al eliminar aviso" });
+  }
+});
+
+app.put("/avisos/:id/status", requireAuth, requireRole("Maestro", "Admin"), async (req, res) => {
+  const id = Number(req.params.id);
+  const { estaActivo } = req.body || {};
+
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "ID inválido" });
+  if (typeof estaActivo !== "boolean") {
+    return res.status(400).json({ error: "estaActivo debe ser true o false" });
+  }
+
+  try {
+    const pool = await poolPromise;
+    const r = await pool.request()
+      .input("id", sql.Int, id)
+      .input("activo", sql.Bit, estaActivo ? 1 : 0)
+      .query(`
+        UPDATE Avisos SET EstaActivo = @activo WHERE IdAviso = @id;
+        SELECT @@ROWCOUNT AS affected;
+      `);
+
+    if ((r.recordset[0]?.affected || 0) === 0) {
+      return res.status(404).json({ error: "Aviso no encontrado" });
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al cambiar estado del aviso" });
+  }
+});
+
 app.post("/ninos", requireAuth, requireRole("Maestro", "Admin"), async (req, res) => {
   const { idTutor, nombre, apellido, fechaNacimiento, alergias, grupo } = req.body || {};
 
