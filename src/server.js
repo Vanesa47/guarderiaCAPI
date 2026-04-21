@@ -989,6 +989,7 @@ app.post("/asistencia/checkout", requireAuth, requireRole("Maestro","Admin"), as
 });
 
 /** Ver últimas asistencias (Maestro o Admin) */
+/* ya no es necesario
 app.get("/asistencia", requireAuth, requireRole("Maestro","Admin"), async (req, res) => {
   const pool = await poolPromise;
   const r = await pool.request().query(`
@@ -998,6 +999,29 @@ app.get("/asistencia", requireAuth, requireRole("Maestro","Admin"), async (req, 
   `);
   res.json(r.recordset);
 });
+*/
+
+app.get("/asistencia", requireAuth, requireRole("Maestro","Admin"), async (req, res) => {
+  const pool = await poolPromise;
+  const r = await pool.request().query(`
+    SELECT a.IdAsistencia, b.nombre, b.apellido, a.HoraEntrada, a.HoraSalida, a.PersonaRecoge
+    FROM Asistencia a
+    JOIN Ninos b ON a.IdNino = b.IdNino
+    ORDER BY a.idasistencia DESC
+  `);
+  res.json(r.recordset);
+});
+
+/** obtener niveles */
+app.get("/niveles", requireAuth, requireRole("Maestro","Admin"), async (req, res) => {
+  const pool = await poolPromise;
+  const r = await pool.request().query(`
+    SELECT id_nivel, nombre_nivel
+    FROM NIVEL
+  `);
+  res.json(r.recordset);
+});
+
 
 /* -------------------- Health check -------------------- */
 app.get("/", (req, res) => res.json({ ok: true, name: "guarderia-api" }));
