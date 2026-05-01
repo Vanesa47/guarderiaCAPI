@@ -34,10 +34,17 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(helmet());
 app.use(cors({
-  origin: [
-    "http://localhost:4200",
-    "https://agreeable-stone-0dabd8210.7.azurestaticapps.net"
-  ],
+  origin: function (origin, callback) {
+    const allowed = [
+      "http://localhost:4200",
+      "https://agreeable-stone-0dabd8210.7.azurestaticapps.net"
+    ];
+    if (!origin || allowed.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("No permitido por CORS"));
+    }
+  },
   credentials: true
 }));
 app.use(express.json({ limit: "1mb" }));
