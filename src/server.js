@@ -34,7 +34,10 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(helmet());
 app.use(cors({
-  origin: "http://localhost:4200",
+  origin: [
+    "http://localhost:4200",
+    "https://agreeable-stone-0dabd8210.7.azurestaticapps.net"
+  ],
   credentials: true
 }));
 app.use(express.json({ limit: "1mb" }));
