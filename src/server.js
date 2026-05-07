@@ -556,7 +556,7 @@ app.delete("/avisos/:id", requireAuth, requireRole("Maestro", "Admin"), async (r
     const r = await pool.request()
       .input("id", sql.Int, id)
       .query(`
-        UPDATE Avisos SET EstaActivo = 0 WHERE IdAviso = @id;
+        DELETE FROM Avisos WHERE id_aviso = @id;
         SELECT @@ROWCOUNT AS affected;
       `);
 
@@ -760,11 +760,11 @@ app.get("/padre/ninos", requireAuth, requireRole("Padre"), async (req, res) => {
 
   const rNinos = await pool.request()
     .input("idTutor", sql.Int, tutor.IdTutor)
-    .query(`SELECT a.IdNino, a.Nombre, a.Apellido, a.FechaNacimiento, a.Alergias, b.nombre_nivel
-      FROM Ninos INNER JOIN nivel b ON a.Grupo = b.id_nivel
+    .query(`SELECT a.IdNino, a.Nombre, a.Apellido, a.FechaNacimiento , a.Alergias, b.nombre_nivel 
+      FROM Ninos a INNER JOIN nivel b ON a.Grupo = b.id_nivel
       WHERE IdTutor=@idTutor ORDER BY IdNino`);
 
-  // Devolvemos datos sensibles desencriptados SOLO para demo (en prod: cuidado con esto)
+  
   const tutorView = {
     idTutor: tutor.IdTutor,
     nombre: tutor.Nombre,
@@ -775,6 +775,7 @@ app.get("/padre/ninos", requireAuth, requireRole("Padre"), async (req, res) => {
 
   res.json({ tutor: tutorView, ninos: rNinos.recordset });
 });
+
 
 /** Ver bitácora de un niño (Padre) */
 app.get("/padre/ninos/:idNino/bitacora", requireAuth, requireRole("Padre","Admin"), async (req, res) => {
@@ -1220,16 +1221,44 @@ app.get("/idusuario", requireAuth, requireRole("Maestro", "Admin"), async (req, 
       .query(`
         SELECT u.IdUsuario, u.Email
   FROM Usuarios u
-  WHERE u.IdRole = 3
-  AND NOT EXISTS (
-    SELECT 1
-    FROM Tutores t
-    WHERE t.IdUsuario = u.IdUsuario)
+  WHERE u.IdRole = 3  
       `);
     res.json(r.recordset);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Error al obtener id de usuario" });
+  }
+});
+
+app.get("/ninos-id", requireAuth, requireRole("Maestro", "Admin"), async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    const r = await pool.request()
+      .query(`
+        SELECT IdNino, Nombre, Apellido
+        FROM Ninos
+        ORDER BY IdNino asc
+      `);
+    res.json(r.recordset);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener id de niños" });
+  }
+});
+
+app.get("/tutores", requireAuth, requireRole("Maestro", "Admin"), async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    const r = await pool.request()
+      .query(`
+        SELECT Nombre, Apellido, IdTutor
+        FROM Tutores
+        ORDER BY Nombre asc
+      `);
+    res.json(r.recordset);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener id de niños con tutor" });
   }
 });
 
