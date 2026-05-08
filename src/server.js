@@ -181,7 +181,9 @@ app.post("/auth/register", requireAuth, requireRole("Admin"), async (req, res) =
 
 /* -------------------- Agregar tutor (Admin) -------------------- */
 app.post("/tutores", requireAuth, requireRole("Admin"), async (req, res) => {
-  const { idUsuario, nombre, apellido, telefono, direccion } = req.body || {};
+  /*const { idUsuario, nombre, apellido, telefono, direccion } = req.body || {};*/
+  const { nombre, apellido, telefono, direccion } = req.body || {};
+  const idUsuario = req.body?.idUsuario?.value || req.body?.idUsuario;
 
   if (!idUsuario || !nombre || !apellido || !telefono || !direccion) {
     return res.status(400).json({ error: "Campos requeridos: idUsuario, nombre, apellido, telefono, direccion" });
