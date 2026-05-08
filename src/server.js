@@ -758,18 +758,11 @@ app.get("/padre/ninos", requireAuth, requireRole("Padre"), async (req, res) => {
   const tutor = rTutor.recordset[0];
   if (!tutor) return res.json({ tutor: null, ninos: [] });
 
- /* const rNinos = await pool.request()
+  const rNinos = await pool.request()
     .input("idTutor", sql.Int, tutor.IdTutor)
     .query(`SELECT a.IdNino, a.Nombre, a.Apellido, a.FechaNacimiento , a.Alergias, b.nombre_nivel 
       FROM Ninos a INNER JOIN nivel b ON a.Grupo = b.id_nivel
-      WHERE IdTutor=@idTutor ORDER BY IdNino`);*/
-
-    const rNinos = await pool.request()
-   .input("idTutor", sql.Int, tutor.IdTutor)
-   .query(`SELECT a.IdNino, a.Nombre, a.Apellido, a.FechaNacimiento , a.Alergias
-     FROM Ninos a 
       WHERE IdTutor=@idTutor ORDER BY IdNino`);
-
   
   const tutorView = {
     idTutor: tutor.IdTutor,
