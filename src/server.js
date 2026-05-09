@@ -174,10 +174,22 @@ app.post("/auth/check-block", async (req, res) => {
 });
 
 
-app.post("/auth/logout", (req, res) => {
+/*app.post("/auth/logout", (req, res) => {
   res.clearCookie("auth");
   res.json({ ok: true });
 });
+*/
+
+app.post("/auth/logout", (req, res) => {
+  res.clearCookie("auth", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    path: "/"
+  });
+  res.status(200).json({ ok: true, message: "Sesión cerrada" });
+});
+
 
 app.get("/me", requireAuth, (req, res) => {
   res.json(req.user);
