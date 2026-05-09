@@ -105,7 +105,7 @@ app.post("/auth/login", async (req, res) => {
           .query(`
             UPDATE Usuarios
             SET IntentosFallidos = @fails,
-                BloqueadoHasta   = DATEADD(minute, 15, GETDATE())
+                BloqueadoHasta   = DATEADD(minute, 15, GETUTCDATE())
             WHERE IdUsuario = @id
           `);
 
@@ -144,6 +144,35 @@ console.log("✅ Cookie enviada:", token.substring(0, 20) + "...");
     res.status(500).json({ error: "Error interno" });
   }
 });
+
+app.post("/auth/check-block", async (req, res) => {
+  const { email } = req.body || {};
+  if (!email) return res.json({ blocked: false, secondsLeft: 0 });
+
+  try {
+    const pool = await poolPromise;
+    const r = await pool.request()
+      .input("email", sql.NVarChar(100), String(email).trim().toLowerCase())
+      .query(`SELECT TOP 1 BloqueadoHasta FROM Usuarios WHERE Email = @email
+        AND BloqueadoHasta > GETUTCDATE()`);
+
+    const u = r.recordset[0];
+    if (!u?.BloqueadoHasta) return res.json({ blocked: false, secondsLeft: 0 });
+
+    const blockedUntil = new Date(u.BloqueadoHasta);
+    const msRestantes = blockedUntil - new Date();
+
+    if (msRestantes <= 0) return res.json({ blocked: false, secondsLeft: 0 });
+
+    res.json({
+      blocked: true,
+      secondsLeft: Math.ceil(msRestantes / 1000)
+    });
+  } catch (e) {
+    res.json({ blocked: false, secondsLeft: 0 });
+  }
+});
+
 
 app.post("/auth/logout", (req, res) => {
   res.clearCookie("auth");
@@ -236,7 +265,7 @@ app.post("/tutores", requireAuth, requireRole("Admin"), async (req, res) => {
 });
 
 /* -------------------- Ver tutores (Admin) -------------------- */
-app.get("/tutores", requireAuth, requireRole("Admin"), async (req, res) => {
+app.get("/tutores", requireAuth, requireRole("Admin","Maestro"), async (req, res) => {
   try {
     const pool = await poolPromise;
     const r = await pool.request().query(`
@@ -762,10 +791,10 @@ app.get("/padre/ninos", requireAuth, requireRole("Padre"), async (req, res) => {
 
   const rNinos = await pool.request()
     .input("idTutor", sql.Int, tutor.IdTutor)
-    .query(`SELECT a.IdNino, a.Nombre, a.Apellido, a.FechaNacimiento , a.Alergias, b.nombre_nivel 
+    .query(`SELECT a.IdNino, a.Nombre, a.Apellido, a.FechaNacimiento , a.Alergias, b.nombre_nivel
       FROM Ninos a INNER JOIN nivel b ON a.Grupo = b.id_nivel
       WHERE IdTutor=@idTutor ORDER BY IdNino`);
-  
+
   const tutorView = {
     idTutor: tutor.IdTutor,
     nombre: tutor.Nombre,
@@ -1222,7 +1251,7 @@ app.get("/idusuario", requireAuth, requireRole("Maestro", "Admin"), async (req, 
       .query(`
         SELECT u.IdUsuario, u.Email
   FROM Usuarios u
-  WHERE u.IdRole = 3  
+  WHERE u.IdRole = 3
       `);
     res.json(r.recordset);
   } catch (err) {
